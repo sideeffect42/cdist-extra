@@ -1,23 +1,47 @@
-.PHONY: help
-help:
-	@echo "Please use \`make <target>' where <target> is one of"
-	@echo "check-manpages  check for manpage in types"
-	@echo "lint            run shellcheck on types"
-	@echo "check           run both type manpage checks and linting"
+.POSIX:
+.FORCE:
 
-TYPEDIR=./type
+help: .FORCE
+	@echo "Please use \`$(MAKE) <target>' where <target> is one of"
+	@echo '  check             run all checks'
+	@echo '  check-manpages    check if a manpage exists for all types'
+	@echo '  shellcheck        run shellcheck'
+
+EXPLORERDIR = ./explorer
+FILESDIR = ./files
+TYPEDIR = ./type
 
 
-check-manpages:
-	./scripts/run-manpage-checks.sh
+# Checks
 
-lint:
-	./scripts/run-shellcheck.sh
+check: check-manpages shellcheck
 
-check: check-manpages lint
+SHELLCHECK = shellcheck
+SHELLCHECKCMD = $(SHELLCHECK) -s sh -f gcc -x -a -o require-variable-braces
 
-clean:
-	$(SPHINXC)
-	rm -f docs/src/index.rst
-	rm -rf docs/src/man7/
-	rm -rf docs/src/__pycache__/
+TYPEFINDOPTS = -type f \( -path '*/explorer/*' -o -name 'manifest' -o -name 'gencode-remote' -o -path '*/files/*.sh' \)
+
+.SILENT: shellcheck
+shellcheck: .FORCE
+	@command -v $(SHELLCHECK) >/dev/null 2>&1 || { \
+		echo 'shellcheck is not installed, cannot check the types.' >&2; \
+		exit 1; \
+	}
+	@{ \
+		test -d $(EXPLORERDIR) && find $(EXPLORERDIR) -type f -print; \
+		test -d $(TYPEDIR) && find $(TYPEDIR) $(TYPEFINDOPTS) -print; \
+		test -d $(FILESDIR) && find $(FILESDIR) -type f -name '*.sh'; \
+	} \
+	| sed -e "s/'/'\\\\''/g" -e "s/^/'/" -e "s/\$$/'/" \
+	| xargs -r -E '' $(SHELLCHECKCMD)
+
+check-manpages: .FORCE
+	@{ \
+		for t in $(TYPEDIR)/*/; do \
+			test -s "$${t%/}/man.rst" || { \
+				printf '%s: type has no man page\n' "$${t%/}" >&2; \
+				ok=false; \
+			}; \
+		done; \
+		$${ok:-true}; \
+	 } && echo 'All types have man pages. Good!'
